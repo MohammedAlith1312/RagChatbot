@@ -23,7 +23,7 @@ export async function POST(request: Request) {
 
     // Find the last user message (support multiple user messages)
    const lastUserMessage = messages.filter((m: any) => m.role === "user").pop();
-    if (!lastUserMessage || !lastUserMessage.parts) {
+    if (!lastUserMessage || !lastUserMessage.content) {
       return new Response(
         JSON.stringify({ error: "No user message found" }),
         { status: 400, headers: { "Content-Type": "application/json" } }
@@ -31,7 +31,7 @@ export async function POST(request: Request) {
     }
 
     // Support array content (merge) and non-string content
-   const query = (lastUserMessage.parts || [])
+   const query = (lastUserMessage.content || [])
   .filter((p: any) => p && p.type === "text" && typeof p.text === "string")
   .map((p: any) => p.text.trim())
   .filter(Boolean)
@@ -91,7 +91,7 @@ Instructions:
     const modelRef = openrouter(model);
 
     // 3) Stream the model response back as UI message stream
-    const result = await streamText({
+    const result =  streamText({
       model: modelRef,
     messages: [
         { role: "system", content: systemPrompt },
