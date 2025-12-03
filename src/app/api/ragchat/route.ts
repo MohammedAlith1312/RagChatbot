@@ -1,5 +1,5 @@
 // src/app/api/chat/route.ts
-import { streamText, UIMessage, convertToModelMessages } from "ai";
+import { streamText } from "ai";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { searchDocuments } from "@/lib/search";
 
@@ -10,7 +10,7 @@ export async function POST(request: Request) {
     const body = await request.json();
     console.log("Request body:", JSON.stringify(body));
 
-    const messages: UIMessage[] = body.messages || [];
+    const messages  = body.messages || [];
     const model =
       body.data?.model || body.model || "nvidia/nemotron-nano-12b-v2-vl:free";
 
@@ -22,7 +22,7 @@ export async function POST(request: Request) {
     }
 
     // Find the last user message (support multiple user messages)
-    const lastUserMessage = [...messages].reverse().find((m) => m.role === "user");
+   const lastUserMessage = messages.filter((m: any) => m.role === "user").pop();
     if (!lastUserMessage || !lastUserMessage.parts) {
       return new Response(
         JSON.stringify({ error: "No user message found" }),
@@ -37,6 +37,9 @@ export async function POST(request: Request) {
   .filter(Boolean)
   .join(" ")
   .trim();
+
+    console.log("Extracted query (for RAG):", query);
+    console.log("Selected model:", model);
     // 1) RAG search using your existing helper
     let results: any[] = [];
     try {
@@ -51,7 +54,7 @@ export async function POST(request: Request) {
     const context =
       results && results.length
         ? results.map((r: any, i: number) => `[Document ${i + 1}] ${r.content}`).join("\n\n")
-        : "";
+        : "No relevant documents found";
 
     console.log("RAG Search Results:", results.length, "documents found");
 
@@ -68,36 +71,19 @@ Instructions:
 - If the context has no relevant info, say so.
 - Be clear, concise, and helpful.`;
 
-    // Construct a typed UIMessage for the system prompt (avoids TypeScript mismatch)
-    const systemMessage: UIMessage = {
-      id: `system-${Date.now()}`,
-      role: "system",
-       parts: [
-        {
-          type: "text",
-          text: `You are a helpful AI assistant.
-
-   Retrieved Context:
-      ${context}
-
-Instructions:
-- Use the retrieved context when answering.
-- Cite document numbers when relevant.
-- If context doesn’t help, say so.`
-        }
-      ]
-    };
    
 
+
+
     // Build final messages list (system + original messages)
-    const augmentedMessages: UIMessage[] = [systemMessage, ...messages];
+    
 
     // Create OpenRouter client (preserves your custom headers)
     const openrouter = createOpenRouter({
       headers: {
         "HTTP-Referer": "http://localhost:3000",
         "X-Title": "ragchatbot",
-        // If you prefer to use API key instead, set: apiKey: process.env.OPENROUTER_API_KEY
+       
       },
     });
 
@@ -105,10 +91,14 @@ Instructions:
     const modelRef = openrouter(model);
 
     // 3) Stream the model response back as UI message stream
-    const result = streamText({
+    const result = await streamText({
       model: modelRef,
-      messages: convertToModelMessages(augmentedMessages),
+    messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: query },
+      ],
     });
+ 
 
     return result.toUIMessageStreamResponse();
   } catch (error) {
